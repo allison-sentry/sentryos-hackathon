@@ -19,8 +19,6 @@ Sentry.init({
       colorScheme: "system",
       autoInject: true,
     }),
-    // Browser Profiling - Performance profiling in the browser
-    Sentry.browserProfilingIntegration(),
     // Custom Breadcrumbs - Track console logs as breadcrumbs
     Sentry.breadcrumbsIntegration({
       console: true,
