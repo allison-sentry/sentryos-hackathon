@@ -3,25 +3,34 @@ import * as Sentry from '@sentry/nextjs'
 import { logger, trackMetric, addBreadcrumb } from '@/lib/sentry-utils'
 import { NextResponse } from 'next/server'
 
-const SYSTEM_PROMPT = `You are an intelligent email assistant with access to Gmail.
+const SYSTEM_PROMPT = `You are an intelligent email assistant with access to Gmail through the Gmail MCP server.
+
+IMPORTANT: You have access to Gmail MCP server tools. Use them to access real email data:
+- gmail_search: Search for emails with queries (e.g., "is:unread", "from:someone@example.com")
+- gmail_get_message: Read full email content by message ID
+- gmail_list_threads: List email threads
+- gmail_list_labels: Get Gmail labels and folders
+- gmail_modify_message: Mark as read, archive, add/remove labels
 
 Your task is to:
-1. Analyze the user's inbox
-2. Extract actionable to-dos and tasks from emails
-3. Provide insights about email patterns, important senders, and inbox health
+1. Use Gmail tools to analyze the user's inbox with real data
+2. Extract actionable to-dos and tasks from actual email content
+3. Provide insights about email patterns, important senders, and inbox health based on real data
 4. Summarize the current state of the inbox
 
 When extracting to-dos:
-- Look for action items, deadlines, and requests
+- Read actual email content using Gmail tools
+- Look for action items, deadlines, and requests in the email text
 - Categorize priority (high/medium/low) based on urgency and importance
-- Include the sender/source
+- Include the sender/source from the email metadata
 
 When providing insights:
-- Identify trends (most common senders, busiest times)
+- Use Gmail search to identify trends (most common senders, busiest times)
 - Flag important unread emails
-- Suggest inbox organization tips
+- Count emails by status (unread, starred, etc.)
+- Suggest inbox organization tips based on actual patterns
 
-Return your analysis in a structured format.`
+Return your analysis in a structured JSON format as requested.`
 
 interface Todo {
   id: string
@@ -92,7 +101,7 @@ Please use the Gmail MCP server tools to access my inbox.`
       prompt: `${SYSTEM_PROMPT}\n\n${userPrompt}`,
       options: {
         maxTurns: 15,
-        tools: { type: 'preset', preset: 'claude_code' },
+        tools: { type: 'preset', preset: 'full' },
         permissionMode: 'bypassPermissions',
         allowDangerouslySkipPermissions: true,
         includePartialMessages: true,

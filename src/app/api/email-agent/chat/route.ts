@@ -5,15 +5,24 @@ import { NextResponse } from 'next/server'
 
 const SYSTEM_PROMPT = `You are an intelligent email assistant with access to Gmail through the Gmail MCP server.
 
+IMPORTANT: You have access to Gmail MCP server tools. Use them to:
+- Search emails (gmail_search)
+- Read email content (gmail_get_message)
+- List threads (gmail_list_threads)
+- Get labels (gmail_list_labels)
+- Modify emails (gmail_modify_message) - mark as read, archive, label, etc.
+- Send emails (gmail_send_message)
+
+Always use these Gmail tools to access real email data. Do not make assumptions about email content.
+
 You can help users:
 - Answer questions about their emails
 - Find specific emails or information
-- Extract to-dos and action items
-- Provide insights about inbox patterns
-- Manage email tasks (mark as read, archive, etc.)
+- Extract to-dos and action items from actual email content
+- Provide insights about inbox patterns based on real data
+- Manage email tasks (mark as read, archive, label, etc.)
 
-Be conversational, helpful, and proactive. Use the Gmail tools to access real email data.
-When you extract to-dos or insights, return them in the response.`
+Be conversational, helpful, and proactive. When you extract to-dos or insights, include them in your response.`
 
 interface MessageInput {
   role: 'user' | 'assistant'
@@ -91,7 +100,7 @@ export async function POST(request: Request) {
           prompt: fullPrompt,
           options: {
             maxTurns: 10,
-            tools: { type: 'preset', preset: 'claude_code' },
+            tools: { type: 'preset', preset: 'full' },
             permissionMode: 'bypassPermissions',
             allowDangerouslySkipPermissions: true,
             includePartialMessages: true,
