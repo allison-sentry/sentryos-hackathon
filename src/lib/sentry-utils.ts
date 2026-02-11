@@ -266,45 +266,22 @@ export async function measureTime<T>(
 
 /**
  * Monitor a cron job or scheduled task
+ * Note: This function is only available server-side.
+ * Use it in API routes or server components only.
+ *
  * @example
- * await monitorCronJob('daily-cleanup', 'schedule-id', async () => {
- *   await cleanupOldData();
- * });
+ * // In an API route or server component:
+ * import * as Sentry from '@sentry/nextjs'
+ *
+ * const checkInId = Sentry.captureCheckIn({
+ *   monitorSlug: 'daily-cleanup',
+ *   status: 'in_progress'
+ * })
+ *
+ * try {
+ *   await cleanupOldData()
+ *   Sentry.captureCheckIn({ checkInId, monitorSlug: 'daily-cleanup', status: 'ok' })
+ * } catch (error) {
+ *   Sentry.captureCheckIn({ checkInId, monitorSlug: 'daily-cleanup', status: 'error' })
+ * }
  */
-export async function monitorCronJob<T>(
-  jobName: string,
-  scheduleId: string,
-  job: () => Promise<T>
-): Promise<T> {
-  const checkInId = Sentry.captureCheckIn(
-    {
-      monitorSlug: jobName,
-      status: "in_progress",
-    },
-    {
-      schedule: {
-        type: "crontab",
-        value: scheduleId,
-      },
-    }
-  );
-
-  try {
-    const result = await job();
-
-    Sentry.captureCheckIn({
-      checkInId,
-      monitorSlug: jobName,
-      status: "ok",
-    });
-
-    return result;
-  } catch (error) {
-    Sentry.captureCheckIn({
-      checkInId,
-      monitorSlug: jobName,
-      status: "error",
-    });
-    throw error;
-  }
-}
