@@ -7,3 +7,6 @@ export async function register() {
     await import('../sentry.edge.config');
   }
 }
+
+// For client-side, we need to import the client config in a client component
+// This will be handled by Next.js automatically via the Sentry webpack plugin

@@ -47,7 +47,7 @@ Sentry.init({
   enableTracing: true,
 
   // Setting this option to true will print useful information to the console while you're setting up Sentry.
-  debug: false,
+  debug: true,
 
   // Additional options for better error tracking
   beforeSend(event, hint) {
