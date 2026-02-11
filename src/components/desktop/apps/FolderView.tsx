@@ -1,13 +1,13 @@
 'use client'
 
-import { Folder, FileText, MessageCircle } from 'lucide-react'
+import { Folder, FileText, MessageCircle, Mail } from 'lucide-react'
 import { useState, useRef } from 'react'
 
 export interface FolderItem {
   id: string
   name: string
   type: 'folder' | 'file' | 'app'
-  icon?: 'folder' | 'document' | 'chat'
+  icon?: 'folder' | 'document' | 'chat' | 'mail'
   onOpen?: () => void
 }
 
@@ -20,6 +20,7 @@ const iconComponents = {
   folder: Folder,
   document: FileText,
   chat: MessageCircle,
+  mail: Mail,
 }
 
 export function FolderView({ items, folderName }: FolderViewProps) {

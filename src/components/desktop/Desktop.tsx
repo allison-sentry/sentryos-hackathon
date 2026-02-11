@@ -116,7 +116,19 @@ function DesktopContent() {
     logger.info('Opening Agents folder')
     trackMetric('desktop.window.open', 1, { window: 'agents-folder' })
     addBreadcrumb('Window opened', { window: 'Agents Folder' })
-    const agentsFolderItems: FolderItem[] = []
+    const agentsFolderItems: FolderItem[] = [
+      {
+        id: 'email-agent',
+        name: 'Email Agent',
+        type: 'app',
+        icon: 'mail',
+        onOpen: () => {
+          logger.info('Opening Email Agent')
+          trackMetric('desktop.app.open', 1, { app: 'email-agent' })
+          window.location.href = '/email-agent'
+        }
+      }
+    ]
 
     openWindow({
       id: 'agents-folder',
