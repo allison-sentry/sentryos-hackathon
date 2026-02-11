@@ -1,8 +1,9 @@
 'use client'
 
-import { useState } from 'react'
-import { Mail, CheckCircle, Inbox, TrendingUp, Brain, Loader2 } from 'lucide-react'
+import { useState, useRef, useEffect } from 'react'
+import { Mail, CheckCircle, Inbox, TrendingUp, Brain, Loader2, Send, MessageSquare } from 'lucide-react'
 import { logger, trackMetric, addBreadcrumb } from '@/lib/sentry-utils'
+import * as Sentry from '@sentry/nextjs'
 
 interface Todo {
   id: string
@@ -19,11 +20,137 @@ interface Insight {
   value?: string | number
 }
 
+interface ChatMessage {
+  id: string
+  role: 'user' | 'assistant'
+  content: string
+  timestamp: Date
+}
+
 export default function EmailAgentPage() {
   const [loading, setLoading] = useState(false)
   const [todos, setTodos] = useState<Todo[]>([])
   const [insights, setInsights] = useState<Insight[]>([])
   const [analysis, setAnalysis] = useState<string>('')
+
+  // Chat interface state
+  const [messages, setMessages] = useState<ChatMessage[]>([
+    {
+      id: '1',
+      role: 'assistant',
+      content: 'Hi! I\'m your Email Agent. I can help you analyze your inbox, extract to-dos, and answer questions about your emails. What would you like to know?',
+      timestamp: new Date()
+    }
+  ])
+  const [input, setInput] = useState('')
+  const [chatLoading, setChatLoading] = useState(false)
+  const messagesEndRef = useRef<HTMLDivElement>(null)
+
+  const scrollToBottom = () => {
+    messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' })
+  }
+
+  useEffect(() => {
+    scrollToBottom()
+  }, [messages])
+
+  const handleChatSubmit = async (e: React.FormEvent) => {
+    e.preventDefault()
+    if (!input.trim() || chatLoading) return
+
+    const userMessage: ChatMessage = {
+      id: crypto.randomUUID(),
+      role: 'user',
+      content: input.trim(),
+      timestamp: new Date()
+    }
+
+    setMessages(prev => [...prev, userMessage])
+    setInput('')
+    setChatLoading(true)
+
+    // Sentry AI Monitoring - Track user message
+    const spanId = Sentry.startSpan({
+      name: 'email_agent.chat',
+      op: 'ai.chat.completions',
+      attributes: {
+        'ai.input_messages': 1,
+        'ai.model_id': 'claude-sonnet-4.5',
+      }
+    }, async (span) => {
+      logger.info('Email agent chat: User message', {
+        messageLength: input.trim().length,
+        spanId: span?.spanContext().spanId
+      })
+      trackMetric('email_agent.chat.message', 1)
+      addBreadcrumb('User sent chat message')
+
+      try {
+        const response = await fetch('/api/email-agent/chat', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            messages: [...messages, userMessage].map(m => ({
+              role: m.role,
+              content: m.content
+            }))
+          })
+        })
+
+        if (!response.ok) {
+          throw new Error('Failed to get response')
+        }
+
+        const data = await response.json()
+
+        const assistantMessage: ChatMessage = {
+          id: crypto.randomUUID(),
+          role: 'assistant',
+          content: data.message,
+          timestamp: new Date()
+        }
+
+        setMessages(prev => [...prev, assistantMessage])
+
+        // Update todos and insights if provided
+        if (data.todos) setTodos(data.todos)
+        if (data.insights) setInsights(data.insights)
+
+        // Sentry AI Monitoring - Track response
+        span?.setAttributes({
+          'ai.output_messages': 1,
+          'ai.response_length': data.message.length,
+          'ai.tools_used': data.toolsUsed || 0,
+        })
+
+        logger.info('Email agent chat: Response received', {
+          responseLength: data.message.length,
+          toolsUsed: data.toolsUsed || 0,
+          spanId: span?.spanContext().spanId
+        })
+        trackMetric('email_agent.chat.response', 1)
+
+      } catch (error) {
+        console.error('Chat error:', error)
+        logger.error('Email agent chat failed', error as Error)
+        trackMetric('email_agent.chat.error', 1)
+        Sentry.captureException(error, {
+          tags: { component: 'email_agent_chat' }
+        })
+
+        setMessages(prev => [...prev, {
+          id: crypto.randomUUID(),
+          role: 'assistant',
+          content: 'Sorry, I encountered an error. Please make sure the Gmail MCP server is configured.',
+          timestamp: new Date()
+        }])
+      } finally {
+        setChatLoading(false)
+      }
+
+      return span
+    })
+  }
 
   const analyzeInbox = async () => {
     setLoading(true)
@@ -119,6 +246,76 @@ export default function EmailAgentPage() {
             </p>
           </div>
         )}
+
+        {/* Chat Interface */}
+        <div className="mb-8 bg-[#1e1a2a] rounded-lg border border-[#362552] overflow-hidden">
+          <div className="bg-[#2a2438] px-6 py-4 border-b border-[#362552] flex items-center gap-2">
+            <MessageSquare className="w-5 h-5 text-[#7553ff]" />
+            <h2 className="text-xl font-semibold text-[#c4b5fd]">Chat with Email Agent</h2>
+          </div>
+
+          {/* Messages */}
+          <div className="h-96 overflow-y-auto p-6 space-y-4">
+            {messages.map((message) => (
+              <div
+                key={message.id}
+                className={`flex gap-3 ${message.role === 'user' ? 'flex-row-reverse' : ''}`}
+              >
+                <div className={`flex-shrink-0 w-8 h-8 rounded-full flex items-center justify-center ${
+                  message.role === 'user' ? 'bg-[#ff45a8]/20' : 'bg-[#7553ff]/20'
+                }`}>
+                  {message.role === 'user' ? '👤' : '🤖'}
+                </div>
+                <div
+                  className={`max-w-[80%] rounded-lg px-4 py-3 ${
+                    message.role === 'user'
+                      ? 'bg-[#ff45a8]/10 text-[#e8e4f0]'
+                      : 'bg-[#2a2438] text-[#e8e4f0]'
+                  }`}
+                >
+                  <p className="text-sm whitespace-pre-wrap">{message.content}</p>
+                  <span className="text-[10px] text-[#9086a3] mt-1 block">
+                    {message.timestamp.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+                  </span>
+                </div>
+              </div>
+            ))}
+
+            {chatLoading && (
+              <div className="flex gap-3">
+                <div className="flex-shrink-0 w-8 h-8 rounded-full flex items-center justify-center bg-[#7553ff]/20">
+                  🤖
+                </div>
+                <div className="bg-[#2a2438] rounded-lg px-4 py-3">
+                  <Loader2 className="w-4 h-4 text-[#7553ff] animate-spin" />
+                </div>
+              </div>
+            )}
+
+            <div ref={messagesEndRef} />
+          </div>
+
+          {/* Input */}
+          <form onSubmit={handleChatSubmit} className="p-4 border-t border-[#362552] bg-[#2a2438]">
+            <div className="flex gap-2">
+              <input
+                type="text"
+                value={input}
+                onChange={(e) => setInput(e.target.value)}
+                placeholder="Ask about your emails..."
+                className="flex-1 bg-[#1e1a2a] text-[#e8e4f0] text-sm rounded px-3 py-2 border border-[#362552] focus:border-[#7553ff] focus:outline-none placeholder:text-[#9086a3]"
+                disabled={chatLoading}
+              />
+              <button
+                type="submit"
+                disabled={chatLoading || !input.trim()}
+                className="px-4 py-2 bg-[#7553ff] hover:bg-[#8c6fff] disabled:bg-[#362552] disabled:cursor-not-allowed rounded transition-colors"
+              >
+                <Send className="w-5 h-5 text-white" />
+              </button>
+            </div>
+          </form>
+        </div>
 
         <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
           {/* To-Dos */}
