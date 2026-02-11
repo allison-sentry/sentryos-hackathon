@@ -9,20 +9,61 @@ Sentry.init({
 
   // Add optional integrations for additional features
   integrations: [
-    Sentry.replayIntegration(),
+    // Session Replay - Record user sessions
+    Sentry.replayIntegration({
+      maskAllText: false,
+      blockAllMedia: false,
+    }),
+    // User Feedback - Feedback widget for users to report issues
+    Sentry.feedbackIntegration({
+      colorScheme: "system",
+      autoInject: true,
+    }),
+    // Browser Profiling - Performance profiling in the browser
+    Sentry.browserProfilingIntegration(),
+    // Custom Breadcrumbs - Track console logs as breadcrumbs
+    Sentry.breadcrumbsIntegration({
+      console: true,
+      dom: true,
+      fetch: true,
+      history: true,
+      xhr: true,
+    }),
   ],
 
-  // Define how likely traces are sampled. Adjust this value in production, or use tracesSampler for greater control.
+  // Performance Monitoring - Define how likely traces are sampled
   tracesSampleRate: 1.0,
 
-  // Define how likely Replay events are sampled.
-  // This sets the sample rate to be 10%. You may want this to be 100% while
-  // in development and sample at a lower rate in production
+  // Profiling - Define how likely profiling data is sampled
+  // Note: Profiling sample rate is relative to tracesSampleRate
+  profilesSampleRate: 1.0,
+
+  // Session Replay - Define how likely Replay events are sampled
+  // 10% of sessions will be recorded
   replaysSessionSampleRate: 0.1,
 
-  // Define how likely Replay events are sampled when an error occurs.
+  // Session Replay - 100% of sessions with errors will be recorded
   replaysOnErrorSampleRate: 1.0,
+
+  // Enable custom metrics
+  enableTracing: true,
 
   // Setting this option to true will print useful information to the console while you're setting up Sentry.
   debug: false,
+
+  // Additional options for better error tracking
+  beforeSend(event, hint) {
+    // Add custom logic here if needed (e.g., filtering, enrichment)
+    return event;
+  },
+
+  // Ignore certain errors
+  ignoreErrors: [
+    // Browser extensions
+    'top.GLOBALS',
+    // Random plugins/extensions
+    'originalCreateNotification',
+    'canvas.contentDocument',
+    'MyApp_RemoveAllHighlights',
+  ],
 });

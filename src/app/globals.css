@@ -240,4 +240,13 @@
   margin-top: 0.5rem;
 }
 
+/* Sentry Demo Page Styles */
+.demo-button {
+  @apply w-full px-4 py-2 bg-primary text-primary-foreground rounded-md hover:opacity-90 transition-opacity text-sm font-medium;
+}
+
+.demo-button-danger {
+  @apply w-full px-4 py-2 bg-destructive text-white rounded-md hover:opacity-90 transition-opacity text-sm font-medium;
+}
+
 
