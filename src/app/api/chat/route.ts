@@ -1,4 +1,6 @@
 import { query } from '@anthropic-ai/claude-agent-sdk'
+import * as Sentry from '@sentry/nextjs'
+import { logger, trackMetric, trackTiming, addBreadcrumb, startSpan } from '@/lib/sentry-utils'
 
 const SYSTEM_PROMPT = `You are a helpful personal assistant designed to help with general research, questions, and tasks.
 
@@ -22,10 +24,20 @@ interface MessageInput {
 }
 
 export async function POST(request: Request) {
+  const requestStartTime = Date.now()
+  const requestId = crypto.randomUUID()
+
+  // Log API request start
+  logger.info('Chat API request started', { requestId })
+  trackMetric('api.chat.request', 1)
+  addBreadcrumb('Chat API request received', { requestId })
+
   try {
     const { messages } = await request.json() as { messages: MessageInput[] }
 
     if (!messages || !Array.isArray(messages)) {
+      logger.warning('Invalid request: Messages array missing', { requestId })
+      trackMetric('api.chat.error.validation', 1, { error: 'missing_messages' })
       return new Response(
         JSON.stringify({ error: 'Messages array is required' }),
         { status: 400, headers: { 'Content-Type': 'application/json' } }
@@ -35,11 +47,27 @@ export async function POST(request: Request) {
     // Get the last user message
     const lastUserMessage = messages.filter(m => m.role === 'user').pop()
     if (!lastUserMessage) {
+      logger.warning('Invalid request: No user message found', { requestId })
+      trackMetric('api.chat.error.validation', 1, { error: 'no_user_message' })
       return new Response(
         JSON.stringify({ error: 'No user message found' }),
         { status: 400, headers: { 'Content-Type': 'application/json' } }
       )
     }
+
+    // Log request details
+    const messageCount = messages.length
+    const userMessageLength = lastUserMessage.content.length
+    logger.info('Processing chat request', {
+      requestId,
+      messageCount,
+      userMessageLength
+    })
+    trackMetric('api.chat.messages', messageCount)
+    addBreadcrumb('User message received', {
+      requestId,
+      messageLength: userMessageLength
+    })
 
     // Build conversation context
     const conversationContext = messages
@@ -53,9 +81,15 @@ export async function POST(request: Request) {
 
     // Create a streaming response
     const encoder = new TextEncoder()
+    let tokensGenerated = 0
+    let toolsUsed = 0
+
     const stream = new ReadableStream({
       async start(controller) {
         try {
+          logger.info('Starting Claude Agent SDK query', { requestId })
+          addBreadcrumb('Agent query started', { requestId })
+
           // Use the claude-agent-sdk query function with all default tools enabled
           for await (const message of query({
             prompt: fullPrompt,
@@ -77,6 +111,7 @@ export async function POST(request: Request) {
               const event = message.event
               // Handle content block delta events for text streaming
               if (event.type === 'content_block_delta' && event.delta?.type === 'text_delta') {
+                tokensGenerated++
                 controller.enqueue(encoder.encode(
                   `data: ${JSON.stringify({ type: 'text_delta', text: event.delta.text })}\n\n`
                 ))
@@ -89,6 +124,10 @@ export async function POST(request: Request) {
               if (Array.isArray(content)) {
                 for (const block of content) {
                   if (block.type === 'tool_use') {
+                    toolsUsed++
+                    logger.info('Tool invoked', { requestId, tool: block.name })
+                    addBreadcrumb('Tool used', { requestId, tool: block.name })
+                    trackMetric('api.chat.tool.used', 1, { tool: block.name })
                     controller.enqueue(encoder.encode(
                       `data: ${JSON.stringify({ type: 'tool_start', tool: block.name })}\n\n`
                     ))
@@ -106,6 +145,18 @@ export async function POST(request: Request) {
 
             // Signal completion
             if (message.type === 'result' && message.subtype === 'success') {
+              const duration = Date.now() - requestStartTime
+              logger.info('Chat API request completed', {
+                requestId,
+                duration,
+                tokensGenerated,
+                toolsUsed
+              })
+              trackTiming('api.chat.duration', duration, 'millisecond')
+              trackMetric('api.chat.success', 1)
+              trackMetric('api.chat.tokens', tokensGenerated)
+              trackMetric('api.chat.tools', toolsUsed)
+
               controller.enqueue(encoder.encode(
                 `data: ${JSON.stringify({ type: 'done' })}\n\n`
               ))
@@ -113,6 +164,11 @@ export async function POST(request: Request) {
 
             // Handle errors
             if (message.type === 'result' && message.subtype !== 'success') {
+              logger.error('Query did not complete successfully', undefined, {
+                requestId,
+                subtype: message.subtype
+              })
+              trackMetric('api.chat.error.query_failed', 1)
               controller.enqueue(encoder.encode(
                 `data: ${JSON.stringify({ type: 'error', message: 'Query did not complete successfully' })}\n\n`
               ))
@@ -122,7 +178,11 @@ export async function POST(request: Request) {
           controller.enqueue(encoder.encode('data: [DONE]\n\n'))
           controller.close()
         } catch (error) {
-          console.error('Stream error:', error)
+          logger.error('Stream error in chat API', error as Error, { requestId })
+          trackMetric('api.chat.error.stream', 1)
+          Sentry.captureException(error, {
+            tags: { component: 'chat_api', requestId }
+          })
           controller.enqueue(encoder.encode(
             `data: ${JSON.stringify({ type: 'error', message: 'Stream error occurred' })}\n\n`
           ))
@@ -139,7 +199,15 @@ export async function POST(request: Request) {
       },
     })
   } catch (error) {
-    console.error('Chat API error:', error)
+    const duration = Date.now() - requestStartTime
+    logger.error('Chat API error', error as Error, { requestId, duration })
+    trackMetric('api.chat.error.general', 1)
+    trackTiming('api.chat.error.duration', duration, 'millisecond')
+
+    Sentry.captureException(error, {
+      tags: { component: 'chat_api', requestId },
+      extra: { duration }
+    })
 
     return new Response(
       JSON.stringify({ error: 'Failed to process chat request. Check server logs for details.' }),

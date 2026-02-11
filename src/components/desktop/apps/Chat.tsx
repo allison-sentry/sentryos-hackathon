@@ -6,6 +6,8 @@ import ReactMarkdown from 'react-markdown'
 import remarkGfm from 'remark-gfm'
 import { Prism as SyntaxHighlighter } from 'react-syntax-highlighter'
 import { oneDark } from 'react-syntax-highlighter/dist/esm/styles/prism'
+import { logger, trackMetric, trackTiming, addBreadcrumb } from '@/lib/sentry-utils'
+import * as Sentry from '@sentry/nextjs'
 
 interface Message {
   id: string
@@ -59,6 +61,13 @@ export function Chat() {
   const messagesEndRef = useRef<HTMLDivElement>(null)
   const inputRef = useRef<HTMLTextAreaElement>(null)
 
+  useEffect(() => {
+    // Track chat component mount
+    logger.info('Chat component initialized')
+    trackMetric('chat.init', 1)
+    addBreadcrumb('Chat opened')
+  }, [])
+
   const scrollToBottom = () => {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' })
   }
@@ -71,12 +80,27 @@ export function Chat() {
     e.preventDefault()
     if (!input.trim() || isLoading) return
 
+    const messageStartTime = Date.now()
+    const messageId = crypto.randomUUID()
+
     const userMessage: Message = {
-      id: crypto.randomUUID(),
+      id: messageId,
       role: 'user',
       content: input.trim(),
       timestamp: new Date()
     }
+
+    // Track message sent
+    logger.info('User message sent', {
+      messageId,
+      messageLength: input.trim().length
+    })
+    trackMetric('chat.message.sent', 1)
+    trackMetric('chat.message.length', input.trim().length)
+    addBreadcrumb('User sent message', {
+      messageId,
+      length: input.trim().length
+    })
 
     setMessages(prev => [...prev, userMessage])
     setInput('')
@@ -139,12 +163,15 @@ export function Chat() {
                 streamingContent += parsed.text
                 setCurrentTool(null) // Clear tool status when text starts flowing
                 // Update the streaming message
-                setMessages(prev => prev.map(msg => 
-                  msg.id === streamingMessageId 
+                setMessages(prev => prev.map(msg =>
+                  msg.id === streamingMessageId
                     ? { ...msg, content: streamingContent }
                     : msg
                 ))
               } else if (parsed.type === 'tool_start') {
+                logger.info('Tool started in chat', { tool: parsed.tool, messageId })
+                trackMetric('chat.tool.started', 1, { tool: parsed.tool })
+                addBreadcrumb('Tool started', { tool: parsed.tool })
                 setCurrentTool({
                   name: parsed.tool,
                   status: 'running'
@@ -155,11 +182,22 @@ export function Chat() {
                   elapsed: parsed.elapsed
                 } : null)
               } else if (parsed.type === 'done') {
+                const responseDuration = Date.now() - messageStartTime
+                logger.info('Chat response completed', {
+                  messageId,
+                  duration: responseDuration,
+                  responseLength: streamingContent.length
+                })
+                trackTiming('chat.response.duration', responseDuration, 'millisecond')
+                trackMetric('chat.response.length', streamingContent.length)
+                trackMetric('chat.response.success', 1)
                 setCurrentTool(null)
               } else if (parsed.type === 'error') {
+                logger.error('Chat response error', undefined, { messageId })
+                trackMetric('chat.response.error', 1)
                 streamingContent = 'Sorry, I encountered an error processing your request.'
-                setMessages(prev => prev.map(msg => 
-                  msg.id === streamingMessageId 
+                setMessages(prev => prev.map(msg =>
+                  msg.id === streamingMessageId
                     ? { ...msg, content: streamingContent }
                     : msg
                 ))
@@ -176,7 +214,20 @@ export function Chat() {
       if (!streamingContent) {
         setMessages(prev => prev.filter(msg => msg.id !== streamingMessageId))
       }
-    } catch {
+    } catch (error) {
+      const errorDuration = Date.now() - messageStartTime
+      logger.error('Chat request failed', error as Error, {
+        messageId,
+        duration: errorDuration
+      })
+      trackMetric('chat.error', 1)
+      trackTiming('chat.error.duration', errorDuration, 'millisecond')
+
+      Sentry.captureException(error, {
+        tags: { component: 'chat', messageId },
+        extra: { duration: errorDuration }
+      })
+
       const errorMessage: Message = {
         id: crypto.randomUUID(),
         role: 'assistant',

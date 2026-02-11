@@ -1,6 +1,8 @@
 'use client'
 
 import dynamic from 'next/dynamic'
+import { useEffect } from 'react'
+import { logger, trackMetric, addBreadcrumb } from '@/lib/sentry-utils'
 
 const Desktop = dynamic(
   () => import('@/components/desktop/Desktop').then(mod => mod.Desktop),
@@ -15,5 +17,12 @@ const Desktop = dynamic(
 )
 
 export default function Home() {
+  useEffect(() => {
+    // Track desktop page view
+    logger.info('Desktop page loaded')
+    trackMetric('page.desktop.view', 1)
+    addBreadcrumb('Desktop page mounted')
+  }, [])
+
   return <Desktop />
 }

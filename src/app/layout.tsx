@@ -1,6 +1,7 @@
 import type { Metadata } from "next";
 import { JetBrains_Mono } from "next/font/google";
 import "./globals.css";
+import { logger, trackMetric } from "@/lib/sentry-utils";
 
 const jetbrainsMono = JetBrains_Mono({
   variable: "--font-mono",
@@ -21,6 +22,12 @@ export default function RootLayout({
 }: Readonly<{
   children: React.ReactNode;
 }>) {
+  // Track app initialization
+  if (typeof window !== 'undefined') {
+    logger.info('SentryOS application initialized')
+    trackMetric('app.init', 1)
+  }
+
   return (
     <html lang="en" className="dark">
       <body className={`${jetbrainsMono.variable} antialiased font-mono`}>

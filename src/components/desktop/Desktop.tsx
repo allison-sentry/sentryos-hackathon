@@ -7,7 +7,8 @@ import { DesktopIcon } from './DesktopIcon'
 import { Notepad } from './apps/Notepad'
 import { FolderView, FolderItem } from './apps/FolderView'
 import { Chat } from './apps/Chat'
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
+import { logger, trackMetric, addBreadcrumb } from '@/lib/sentry-utils'
 
 const INSTALL_GUIDE_CONTENT = `# SentryOS Install Guide
 
@@ -58,7 +59,23 @@ function DesktopContent() {
   const { windows, openWindow } = useWindowManager()
   const [selectedIcon, setSelectedIcon] = useState<string | null>(null)
 
+  useEffect(() => {
+    // Track desktop initialization
+    logger.info('Desktop environment initialized')
+    trackMetric('desktop.init', 1)
+    addBreadcrumb('Desktop mounted')
+  }, [])
+
+  useEffect(() => {
+    // Track active window count
+    const activeWindows = windows.filter(w => !w.isMinimized).length
+    trackMetric('desktop.windows.active', activeWindows)
+  }, [windows])
+
   const openInstallGuide = () => {
+    logger.info('Opening Install Guide window')
+    trackMetric('desktop.window.open', 1, { window: 'install-guide' })
+    addBreadcrumb('Window opened', { window: 'Install Guide' })
     openWindow({
       id: 'install-guide',
       title: 'Install Guide.md',
@@ -76,6 +93,9 @@ function DesktopContent() {
   }
 
   const openChatWindow = () => {
+    logger.info('Opening Chat window')
+    trackMetric('desktop.window.open', 1, { window: 'chat' })
+    addBreadcrumb('Window opened', { window: 'Chat' })
     openWindow({
       id: 'chat',
       title: 'SentryOS Chat',
@@ -93,6 +113,9 @@ function DesktopContent() {
   }
 
   const openAgentsFolder = () => {
+    logger.info('Opening Agents folder')
+    trackMetric('desktop.window.open', 1, { window: 'agents-folder' })
+    addBreadcrumb('Window opened', { window: 'Agents Folder' })
     const agentsFolderItems: FolderItem[] = []
 
     openWindow({
@@ -113,6 +136,7 @@ function DesktopContent() {
 
   const handleDesktopClick = () => {
     setSelectedIcon(null)
+    addBreadcrumb('Desktop clicked')
   }
 
   return (
