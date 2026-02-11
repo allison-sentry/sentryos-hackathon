@@ -11,6 +11,7 @@ import * as Sentry from "@sentry/nextjs";
 
 /**
  * Track custom metrics for business KPIs
+ * Note: Metrics are only available server-side
  * @example trackMetric('user.signup', 1, { plan: 'pro' })
  */
 export function trackMetric(
@@ -18,13 +19,17 @@ export function trackMetric(
   value: number,
   tags?: Record<string, string>
 ) {
-  Sentry.metrics.increment(name, value, {
-    tags,
-  });
+  // Metrics API is only available server-side
+  if (typeof window === 'undefined' && Sentry.metrics) {
+    Sentry.metrics.increment(name, value, {
+      tags,
+    });
+  }
 }
 
 /**
  * Track timing metrics (e.g., API response times, function execution)
+ * Note: Metrics are only available server-side
  * @example trackTiming('api.response.time', 150, { endpoint: '/users' })
  */
 export function trackTiming(
@@ -33,14 +38,18 @@ export function trackTiming(
   unit: "millisecond" | "second" | "minute" = "millisecond",
   tags?: Record<string, string>
 ) {
-  Sentry.metrics.distribution(name, value, {
-    unit,
-    tags,
-  });
+  // Metrics API is only available server-side
+  if (typeof window === 'undefined' && Sentry.metrics) {
+    Sentry.metrics.distribution(name, value, {
+      unit,
+      tags,
+    });
+  }
 }
 
 /**
  * Track gauge metrics (e.g., current active users, queue size)
+ * Note: Metrics are only available server-side
  * @example trackGauge('active.users', 42)
  */
 export function trackGauge(
@@ -48,13 +57,17 @@ export function trackGauge(
   value: number,
   tags?: Record<string, string>
 ) {
-  Sentry.metrics.gauge(name, value, {
-    tags,
-  });
+  // Metrics API is only available server-side
+  if (typeof window === 'undefined' && Sentry.metrics) {
+    Sentry.metrics.gauge(name, value, {
+      tags,
+    });
+  }
 }
 
 /**
  * Track set metrics (e.g., unique users, unique errors)
+ * Note: Metrics are only available server-side
  * @example trackSet('unique.users', userId)
  */
 export function trackSet(
@@ -62,9 +75,12 @@ export function trackSet(
   value: string | number,
   tags?: Record<string, string>
 ) {
-  Sentry.metrics.set(name, value, {
-    tags,
-  });
+  // Metrics API is only available server-side
+  if (typeof window === 'undefined' && Sentry.metrics) {
+    Sentry.metrics.set(name, value, {
+      tags,
+    });
+  }
 }
 
 // ============================================================================
