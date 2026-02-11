@@ -66,80 +66,122 @@ export async function POST(request: NextRequest) {
 
     trackMetric('gong_agent.chat.messages', messages.length);
 
-    // Fetch Gong calls data
-    const fromDateTime = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000).toISOString(); // 7 days ago
-    const toDateTime = new Date().toISOString();
+    // Create a streaming response
+    const encoder = new TextEncoder();
+    const stream = new ReadableStream({
+      async start(controller) {
+        try {
+          // Fetch Gong calls data
+          const fromDateTime = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000).toISOString(); // 7 days ago
+          const toDateTime = new Date().toISOString();
 
-    addBreadcrumb('Fetching Gong calls', {
-      fromDateTime,
-      toDateTime
-    });
+          addBreadcrumb('Fetching Gong calls', {
+            fromDateTime,
+            toDateTime
+          });
 
-    let gongData: GongCallsResponse = {};
-    let hasGongData = false;
+          let gongData: GongCallsResponse = {};
+          let hasGongData = false;
 
-    try {
-      const gongResponse = await fetch(`https://api.gong.io/v2/calls?fromDateTime=${encodeURIComponent(fromDateTime)}&toDateTime=${encodeURIComponent(toDateTime)}`, {
-        method: 'GET',
-        headers: {
-          'Authorization': `Basic ${process.env.GONG_API_KEY || ''}`,
-          'Content-Type': 'application/json',
-        },
-      });
+          try {
+            const gongResponse = await fetch(`https://api.gong.io/v2/calls?fromDateTime=${encodeURIComponent(fromDateTime)}&toDateTime=${encodeURIComponent(toDateTime)}`, {
+              method: 'GET',
+              headers: {
+                'Authorization': `Basic ${process.env.GONG_API_KEY || ''}`,
+                'Content-Type': 'application/json',
+              },
+            });
 
-      if (gongResponse.ok) {
-        gongData = await gongResponse.json();
-        hasGongData = true;
+            if (gongResponse.ok) {
+              gongData = await gongResponse.json();
+              hasGongData = true;
+            }
+          } catch (error) {
+            console.error('Failed to fetch Gong data:', error);
+            // Continue without Gong data
+          }
+
+          addBreadcrumb('Starting Claude Agent SDK query with Gong data', {
+            hasGongData,
+            requestId
+          });
+
+          addBreadcrumb('Gong agent query started', { requestId });
+
+          // Simulate agent processing (replace with actual Claude Agent SDK integration)
+          const processingDelay = Math.random() * 3000 + 2000; // 2-5 seconds
+          await new Promise(resolve => setTimeout(resolve, processingDelay));
+
+          // Generate response based on user message and Gong data
+          let responseContent = '';
+          
+          if (hasGongData && gongData.calls && gongData.calls.length > 0) {
+            responseContent = `Based on your recent Gong calls, I found ${gongData.calls.length} calls from the past week. `;
+            
+            if (latestUserMessage.content.toLowerCase().includes('summary')) {
+              responseContent += `Here's a summary of your recent activity:\n\n`;
+              gongData.calls.slice(0, 3).forEach((call, index) => {
+                responseContent += `${index + 1}. ${call.title || 'Untitled Call'} - Duration: ${call.duration || 'Unknown'} minutes\n`;
+              });
+            } else {
+              responseContent += `How can I help you analyze this data?`;
+            }
+          } else {
+            responseContent = `I'm ready to help you with Gong call analysis. However, I couldn't fetch your recent call data at the moment. You can ask me about call summaries, participant insights, or any other questions about your sales calls.`;
+          }
+
+          // Stream the response content
+          controller.enqueue(encoder.encode(
+            `data: ${JSON.stringify({ type: 'text_delta', text: responseContent })}\n\n`
+          ));
+
+          // Signal completion
+          controller.enqueue(encoder.encode(
+            `data: ${JSON.stringify({ type: 'done' })}\n\n`
+          ));
+
+          const duration = performance.now() - startTime;
+          
+          addBreadcrumb('Gong agent request completed', {
+            duration,
+            requestId,
+            tokensGenerated: null,
+            toolsUsed: 0
+          });
+
+          trackMetric('gong_agent.chat.api.success', 1);
+          trackTiming('gong_agent.chat.api.duration', duration, 'millisecond');
+
+          controller.enqueue(encoder.encode('data: [DONE]\n\n'));
+          controller.close();
+        } catch (error) {
+          console.error('Stream error in Gong agent', error, { requestId });
+          
+          const duration = performance.now() - startTime;
+          trackMetric('gong_agent.chat.api.error.stream', 1);
+          trackTiming('gong_agent.chat.api.duration', duration, 'millisecond', { 
+            status: 'error' 
+          });
+
+          try {
+            controller.enqueue(encoder.encode(
+              `data: ${JSON.stringify({ type: 'error', message: 'Stream error occurred' })}\n\n`
+            ));
+          } catch {
+            // Controller might already be closed, ignore
+          }
+          
+          controller.close();
+        }
       }
-    } catch (error) {
-      console.error('Failed to fetch Gong data:', error);
-      // Continue without Gong data
-    }
-
-    addBreadcrumb('Starting Claude Agent SDK query with Gong data', {
-      hasGongData,
-      requestId
     });
 
-    addBreadcrumb('Gong agent query started', { requestId });
-
-    // Simulate agent processing (replace with actual Claude Agent SDK integration)
-    const processingDelay = Math.random() * 3000 + 2000; // 2-5 seconds
-    await new Promise(resolve => setTimeout(resolve, processingDelay));
-
-    // Generate response based on user message and Gong data
-    let responseContent = '';
-    
-    if (hasGongData && gongData.calls && gongData.calls.length > 0) {
-      responseContent = `Based on your recent Gong calls, I found ${gongData.calls.length} calls from the past week. `;
-      
-      if (latestUserMessage.content.toLowerCase().includes('summary')) {
-        responseContent += `Here's a summary of your recent activity:\n\n`;
-        gongData.calls.slice(0, 3).forEach((call, index) => {
-          responseContent += `${index + 1}. ${call.title || 'Untitled Call'} - Duration: ${call.duration || 'Unknown'} minutes\n`;
-        });
-      } else {
-        responseContent += `How can I help you analyze this data?`;
-      }
-    } else {
-      responseContent = `I'm ready to help you with Gong call analysis. However, I couldn't fetch your recent call data at the moment. You can ask me about call summaries, participant insights, or any other questions about your sales calls.`;
-    }
-
-    const duration = performance.now() - startTime;
-    
-    addBreadcrumb('Gong agent request completed', {
-      duration,
-      requestId,
-      tokensGenerated: null,
-      toolsUsed: 0
-    });
-
-    trackMetric('gong_agent.chat.api.success', 1);
-    trackTiming('gong_agent.chat.api.duration', duration, 'millisecond');
-
-    return NextResponse.json({
-      role: 'assistant',
-      content: responseContent
+    return new Response(stream, {
+      headers: {
+        'Content-Type': 'text/event-stream',
+        'Cache-Control': 'no-cache',
+        'Connection': 'keep-alive',
+      },
     });
 
   } catch (error) {
@@ -147,6 +189,7 @@ export async function POST(request: NextRequest) {
     
     console.error('Gong agent chat error:', error);
     
+    trackMetric('gong_agent.chat.api.error.init', 1);
     trackTiming('gong_agent.chat.api.duration', duration, 'millisecond', { 
       status: 'error' 
     });
