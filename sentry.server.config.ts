@@ -21,6 +21,9 @@ Sentry.init({
 
   // Additional integrations for server-side monitoring
   integrations: [
-    // Profiling is automatically included when profilesSampleRate is set
+    // Capture console logs and send to Sentry Logs
+    Sentry.captureConsoleIntegration({
+      levels: ['log', 'info', 'warn', 'error', 'debug']
+    }),
   ],
 });

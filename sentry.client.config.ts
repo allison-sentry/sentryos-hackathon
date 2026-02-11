@@ -19,6 +19,10 @@ Sentry.init({
       colorScheme: "system",
       autoInject: true,
     }),
+    // Capture console logs and send to Sentry Logs
+    Sentry.captureConsoleIntegration({
+      levels: ['log', 'info', 'warn', 'error', 'debug']
+    }),
     // Custom Breadcrumbs - Track console logs as breadcrumbs
     Sentry.breadcrumbsIntegration({
       console: true,
