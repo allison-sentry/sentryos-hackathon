@@ -21,7 +21,6 @@ Sentry.init({
 
   // Additional integrations for server-side monitoring
   integrations: [
-    // Node Profiling integration
-    Sentry.nodeProfilingIntegration(),
+    // Profiling is automatically included when profilesSampleRate is set
   ],
 });
